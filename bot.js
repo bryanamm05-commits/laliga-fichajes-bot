@@ -1,15 +1,20 @@
 const { Client, GatewayIntentBits, EmbedBuilder, REST, Routes, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 
 const BOT_TOKEN = process.env.DISCORD_TOKEN;
-const CHANNEL_ID = 'TU_ID_DE_CANAL_AQUI'; // ID del canal de fichajes
+const CHANNEL_ID = 'TU_ID_DE_CANAL_AQUI'; // Canal público donde se anunciará el fichaje final
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+const client = new Client({ 
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.DirectMessages
+    ] 
+});
 
-// Definición del comando /fichar
 const commands = [
     new SlashCommandBuilder()
         .setName('fichar')
-        .setDescription('Enviar una oferta de contrato a un jugador')
+        .setDescription('Enviar una oferta de contrato por DM a un jugador')
         .addUserOption(option => 
             option.setName('jugador')
                   .setDescription('El jugador al que le envías la oferta')
@@ -24,7 +29,6 @@ const commands = [
                   .setRequired(false))
 ].map(command => command.toJSON());
 
-// Registrar comando /fichar en Discord
 client.once('ready', async () => {
     console.log(`✅ Bot conectado como ${client.user.tag}`);
     const rest = new REST({ version: '10' }).setToken(BOT_TOKEN);
@@ -39,7 +43,6 @@ client.once('ready', async () => {
     }
 });
 
-// Manejador del comando
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
@@ -49,7 +52,7 @@ client.on('interactionCreate', async interaction => {
         const rosterCount = interaction.options.getString('plantilla') || 'N/A';
         const manager = interaction.user;
 
-        // Crear el botón de aceptación
+        // Crear botón de aceptación para el DM
         const acceptButton = new ButtonBuilder()
             .setCustomId('accept_offer')
             .setLabel('Aceptar Contrato')
@@ -57,63 +60,76 @@ client.on('interactionCreate', async interaction => {
 
         const row = new ActionRowBuilder().addComponents(acceptButton);
 
-        // Embed de la oferta pendiente
-        const offerEmbed = new EmbedBuilder()
+        // Embed privado para el jugador
+        const dmEmbed = new EmbedBuilder()
             .setColor('#F1C40F')
             .setAuthor({ name: 'LaLiga Fichajes • Oferta Recibida' })
-            .setTitle(`Oferta de Contrato: ${teamRole.name}`)
-            .setDescription(`<@${player.id}>, has recibido una oferta formal para unirte a ⚽ <@&${teamRole.id}>.`)
+            .setTitle(`Propuesta de Contrato: ${teamRole.name}`)
+            .setDescription(`Hola <@${player.id}>, el club **${teamRole.name}** te ha enviado una oferta formal para unirte a su plantilla.`)
             .addFields(
-                { name: '💼 Publicado Por', value: `<@${manager.id}>`, inline: true },
-                { name: '📊 Roster', value: rosterCount, inline: true }
+                { name: '💼 Manager / Sub DT', value: `<@${manager.id}>`, inline: true },
+                { name: '📊 Roster Actual', value: rosterCount, inline: true }
             )
-            .setFooter({ text: 'Haz clic en el botón de abajo para firmar el contrato.' });
+            .setFooter({ text: 'Presiona el botón para firmar el contrato.' });
 
-        // Enviar mensaje con el botón al canal
-        const response = await interaction.reply({
-            content: `📩 <@${player.id}>, tienes una propuesta de fichaje.`,
-            embeds: [offerEmbed],
-            components: [row],
-            fetchReply: true
-        });
-
-        // Colector para escuchar el clic del botón (Tiempo límite: 24 horas)
-        const collector = response.createMessageComponentCollector({ componentType: ComponentType.Button, time: 86400000 });
-
-        collector.on('collect', async buttonInteraction => {
-            // Validar que solo el jugador mencionado pueda presionar el botón
-            if (buttonInteraction.user.id !== player.id) {
-                return buttonInteraction.reply({ 
-                    content: '❌ Esta oferta no es para ti.', 
-                    ephemeral: true 
-                });
-            }
-
-            // Embed de contrato aceptado
-            const acceptedEmbed = new EmbedBuilder()
-                .setColor('#2ECC71')
-                .setAuthor({ name: 'LaLiga Fichajes • Fichaje Oficial' })
-                .setTitle(`Contract Accepted - ${teamRole.name}`)
-                .setDescription(`<@${player.id}> has accepted an offer to join ⚽ <@&${teamRole.id}>.`)
-                .addFields(
-                    { name: '📊 Roster', value: rosterCount, inline: true },
-                    { name: '💼 Manager', value: `<@${manager.id}>`, inline: true }
-                )
-                .setTimestamp()
-                .setFooter({ text: 'LaLiga Fichajes • Transactions' });
-
-            // Desactivar el botón y actualizar el mensaje
-            acceptButton.setDisabled(true).setLabel('Contrato Firmado');
-            const disabledRow = new ActionRowBuilder().addComponents(acceptButton);
-
-            await buttonInteraction.update({
-                content: '✅ **¡Fichaje Confirmado!**',
-                embeds: [acceptedEmbed],
-                components: [disabledRow]
+        try {
+            // Intentar enviar DM al jugador
+            const dmMessage = await player.send({
+                embeds: [dmEmbed],
+                components: [row]
             });
 
-            collector.stop();
-        });
+            // Confirmar al Manager que la oferta fue enviada por DM
+            await interaction.reply({
+                content: `📩 Oferta enviada con éxito por privado a <@${player.id}>. Esperando su respuesta.`,
+                ephemeral: true
+            });
+
+            // Escuchar la respuesta del botón en el DM (Tiempo límite: 24 horas)
+            const collector = dmMessage.createMessageComponentCollector({ 
+                componentType: ComponentType.Button, 
+                time: 86400000 
+            });
+
+            collector.on('collect', async buttonInteraction => {
+                // Embed oficial para el canal público de fichajes
+                const acceptedEmbed = new EmbedBuilder()
+                    .setColor('#2ECC71')
+                    .setAuthor({ name: 'LaLiga Fichajes • Fichaje Oficial' })
+                    .setTitle(`Contract Accepted - ${teamRole.name}`)
+                    .setDescription(`<@${player.id}> has accepted an offer to join ⚽ <@&${teamRole.id}>.`)
+                    .addFields(
+                        { name: '📊 Roster', value: rosterCount, inline: true },
+                        { name: '💼 Manager', value: `<@${manager.id}>`, inline: true }
+                    )
+                    .setTimestamp()
+                    .setFooter({ text: 'LaLiga Fichajes • Transactions' });
+
+                // Publicar en el canal oficial de fichajes
+                const announceChannel = await client.channels.fetch(CHANNEL_ID);
+                if (announceChannel) {
+                    await announceChannel.send({ embeds: [acceptedEmbed] });
+                }
+
+                // Desactivar el botón en el DM del jugador
+                acceptButton.setDisabled(true).setLabel('Contrato Firmado');
+                const disabledRow = new ActionRowBuilder().addComponents(acceptButton);
+
+                await buttonInteraction.update({
+                    content: '✅ **¡Has aceptado el contrato! Tu fichaje ha sido anunciado públicamente.**',
+                    components: [disabledRow]
+                });
+
+                collector.stop();
+            });
+
+        } catch (error) {
+            console.error('Error al enviar DM:', error);
+            await interaction.reply({
+                content: `❌ No se pudo enviar el mensaje privado a <@${player.id}>. Es posible que tenga los DMs bloqueados.`,
+                ephemeral: true
+            });
+        }
     }
 });
 
