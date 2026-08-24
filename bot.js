@@ -12,7 +12,9 @@ const {
 } = require('discord.js');
 
 const BOT_TOKEN = process.env.DISCORD_TOKEN;
-const CHANNEL_ID = '1541580517605113987'; // Canal donde se anunciará el fichaje firmado
+
+// ⚠️ REEMPLAZA ESTE TEXTO POR LA ID REAL DE TU CANAL DE FICHAJES (Solo números)
+const CHANNEL_ID = '1541580517605113987'; 
 
 const client = new Client({ 
     intents: [
@@ -20,9 +22,10 @@ const client = new Client({
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.DirectMessages
     ],
-    partials: [Partials.Channel, Partials.Message] // Permite al bot recibir interacciones en DM
+    partials: [Partials.Channel, Partials.Message]
 });
 
+// Definición del comando /fichar
 const commands = [
     new SlashCommandBuilder()
         .setName('fichar')
@@ -41,6 +44,7 @@ const commands = [
                   .setRequired(false))
 ].map(command => command.toJSON());
 
+// Inicialización del Bot y registro del Slash Command
 client.once('ready', async () => {
     console.log(`✅ Bot conectado correctamente como ${client.user.tag}`);
     const rest = new REST({ version: '10' }).setToken(BOT_TOKEN);
@@ -56,14 +60,14 @@ client.once('ready', async () => {
 });
 
 client.on('interactionCreate', async interaction => {
-    // 1. Manejar comando /fichar
+    // 1. Manejar la ejecución del comando /fichar
     if (interaction.isChatInputCommand() && interaction.commandName === 'fichar') {
         const player = interaction.options.getUser('jugador');
         const teamRole = interaction.options.getRole('equipo');
         const rosterCount = interaction.options.getString('plantilla') || 'N/A';
         const manager = interaction.user;
 
-        // ID único codificado para la transacción
+        // Custom ID codificado con la información de la transacción
         const customButtonId = `dm_accept_${teamRole.id}_${manager.id}_${encodeURIComponent(rosterCount)}`;
 
         const acceptButton = new ButtonBuilder()
@@ -77,7 +81,7 @@ client.on('interactionCreate', async interaction => {
             .setColor('#F1C40F')
             .setAuthor({ name: 'LaLiga Fichajes • Oferta Recibida' })
             .setTitle(`Propuesta de Contrato: ${teamRole.name}`)
-            .setDescription(`Hola <@${player.id}>, has recibido una propuesta formal para unirte a ⚽ **${teamRole.name}**.`)
+            .setDescription(`Hola <@${player.id}>, el club **${teamRole.name}** te ha enviado una oferta formal para unirte a su plantilla.`)
             .addFields(
                 { name: '💼 Manager / Sub DT', value: `<@${manager.id}>`, inline: true },
                 { name: '📊 Roster Actual', value: rosterCount, inline: true }
@@ -85,30 +89,28 @@ client.on('interactionCreate', async interaction => {
             .setFooter({ text: 'Presiona el botón para firmar el contrato.' });
 
         try {
-            // Intentar enviar al DM
             await player.send({
                 embeds: [dmEmbed],
                 components: [row]
             });
 
-            // Confirmación efímera en el servidor
             await interaction.reply({
                 content: `📩 Oferta enviada por mensaje privado a <@${player.id}>.`,
                 ephemeral: true
             });
         } catch (error) {
-            console.error('Error al enviar DM:', error);
+            console.error('Error enviando mensaje privado:', error);
             await interaction.reply({
-                content: `❌ No se pudo enviar el mensaje privado a <@${player.id}>. El usuario debe activar "Permitir mensajes directos de miembros del servidor" en su Configuración de Privacidad.`,
+                content: `❌ No se pudo enviar el DM a <@${player.id}>. Debe habilitar la opción de mensajes directos en los ajustes del servidor.`,
                 ephemeral: true
             });
         }
         return;
     }
 
-    // 2. Manejar cuando el jugador presiona "Aceptar Contrato" desde su DM
+    // 2. Manejar la aceptación desde el Mensaje Privado
     if (interaction.isButton() && interaction.customId.startsWith('dm_accept_')) {
-        await interaction.deferUpdate(); // Evita el error "No ha respondido a tiempo"
+        await interaction.deferUpdate();
 
         const parts = interaction.customId.split('_');
         const teamRoleId = parts[2];
@@ -119,7 +121,7 @@ client.on('interactionCreate', async interaction => {
         const acceptedEmbed = new EmbedBuilder()
             .setColor('#2ECC71')
             .setAuthor({ name: 'LaLiga Fichajes • Fichaje Oficial' })
-            .setTitle(`Contract Accepted - <@&${teamRoleId}>`)
+            .setTitle(`Contract Accepted`)
             .setDescription(`<@${player.id}> has accepted an offer to join ⚽ <@&${teamRoleId}>.`)
             .addFields(
                 { name: '📊 Roster', value: rosterCount, inline: true },
@@ -128,14 +130,19 @@ client.on('interactionCreate', async interaction => {
             .setTimestamp()
             .setFooter({ text: 'LaLiga Fichajes • Transactions' });
 
-        // Publicar el anuncio en el canal público oficial de fichajes
+        // Intento de envío al canal público de anuncios
         try {
+            console.log(`Buscando canal de anuncios con ID: ${CHANNEL_ID}`);
             const channel = await client.channels.fetch(CHANNEL_ID);
+
             if (channel) {
                 await channel.send({ embeds: [acceptedEmbed] });
+                console.log('✅ Fichaje anunciado exitosamente en el canal.');
+            } else {
+                console.error('❌ El canal no fue encontrado por el bot.');
             }
         } catch (err) {
-            console.error('Error publicando en el canal público:', err);
+            console.error('❌ Error al publicar en el canal oficial:', err);
         }
 
         // Desactivar el botón en el privado del jugador
