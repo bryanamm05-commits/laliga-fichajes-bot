@@ -12,7 +12,7 @@ const {
 } = require('discord.js');
 
 const BOT_TOKEN = process.env.DISCORD_TOKEN;
-const CHANNEL_ID = 'TU_ID_DE_CANAL_AQUI'; // Canal donde se anunciará el fichaje firmado
+const CHANNEL_ID = '1541580517605113987'; // Canal donde se anunciará el fichaje firmado
 
 const client = new Client({ 
     intents: [
