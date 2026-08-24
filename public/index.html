@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>LaLiga Fichajes - Control Panel</title>
+    <style>
+        body { font-family: sans-serif; background: #18191c; color: #fff; padding: 20px; }
+        .container { display: flex; gap: 20px; flex-wrap: wrap; }
+        .card { background: #2f3136; padding: 20px; border-radius: 8px; flex: 1; min-width: 300px; }
+        input, select, button { width: 100%; margin-bottom: 12px; padding: 10px; border-radius: 4px; border: none; box-sizing: border-box; }
+        input, select { background: #40444b; color: #fff; }
+        button { font-weight: bold; cursor: pointer; }
+        .btn-green { background: #2ecc71; color: white; }
+        .btn-blue { background: #7289da; color: white; }
+    </style>
+</head>
+<body>
+    <h1>LaLiga Fichajes Bot - Panel de Control</h1>
+    
+    <div class="container">
+        <div class="card">
+            <h2>⚙️ Gestionar Equipo / Roster</h2>
+            <input type="text" id="m_teamName" placeholder="Nombre Equipo Exacto (ej: Real Madrid)">
+            <input type="text" id="m_roleId" placeholder="ID Rol Equipo Discord">
+            <input type="text" id="m_managerId" placeholder="ID Usuario Manager">
+            <input type="text" id="m_logoUrl" placeholder="URL Logo del Equipo (PNG)">
+            <input type="number" id="m_rosterCount" placeholder="Roster Actual (ej: 18)" value="0">
+            <button class="btn-blue" onclick="saveTeamRoster()">Guardar Equipo</button>
+        </div>
+
+        <div class="card">
+            <h2>📝 Publicar Transacción</h2>
+            <select id="actionType">
+                <option value="sign">Fichaje (Sign)</option>
+                <option value="release">Despido (Release)</option>
+                <option value="demand">Demanda (Demand)</option>
+            </select>
+            <input type="text" id="t_teamName" placeholder="Nombre Equipo Exacto">
+            <input type="text" id="t_playerId" placeholder="ID Usuario Jugador">
+            <input type="text" id="t_executorId" placeholder="ID Quién ejecuta (Solo Release)">
+            <button class="btn-green" onclick="submitTransaction()">Enviar a Discord</button>
+        </div>
+    </div>
+
+    <script>
+        async function saveTeamRoster() {
+            const payload = {
+                teamName: document.getElementById('m_teamName').value,
+                roleId: document.getElementById('m_roleId').value,
+                managerId: document.getElementById('m_managerId').value,
+                logoUrl: document.getElementById('m_logoUrl').value,
+                rosterCount: document.getElementById('m_rosterCount').value
+            };
+
+            const res = await fetch('/api/teams/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            alert(data.message);
+        }
+
+        async function submitTransaction() {
+            const actionType = document.getElementById('actionType').value;
+            const payload = {
+                teamName: document.getElementById('t_teamName').value,
+                playerId: document.getElementById('t_playerId').value,
+                executorId: document.getElementById('t_executorId').value
+            };
+
+            const res = await fetch('/api/transaction', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ actionType, payload })
+            });
+
+            const data = await res.json();
+            if (data.success) {
+                alert(`¡Transacción enviada! Nuevo roster: ${data.updatedRoster}/20`);
+            } else {
+                alert(`Error: ${data.error}`);
+            }
+        }
+    </script>
+</body>
+</html>
