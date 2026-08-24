@@ -13,13 +13,15 @@ const {
 
 const BOT_TOKEN = process.env.DISCORD_TOKEN;
 
-// ⚠️ REEMPLAZA ESTE TEXTO POR LA ID REAL DE TU CANAL DE FICHAJES (Solo números)
+// ⚠️ REEMPLAZA POR LA ID REAL DE TU CANAL DE FICHAJES Y DE TU SERVIDOR
 const CHANNEL_ID = '1541580517605113987'; 
+const GUILD_ID = '1541580517605113987'; 
 
 const client = new Client({ 
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.GuildMembers, // Requerido para modificar roles
         GatewayIntentBits.DirectMessages
     ],
     partials: [Partials.Channel, Partials.Message]
@@ -44,7 +46,6 @@ const commands = [
                   .setRequired(false))
 ].map(command => command.toJSON());
 
-// Inicialización del Bot y registro del Slash Command
 client.once('ready', async () => {
     console.log(`✅ Bot conectado correctamente como ${client.user.tag}`);
     const rest = new REST({ version: '10' }).setToken(BOT_TOKEN);
@@ -60,14 +61,13 @@ client.once('ready', async () => {
 });
 
 client.on('interactionCreate', async interaction => {
-    // 1. Manejar la ejecución del comando /fichar
+    // 1. Comando /fichar
     if (interaction.isChatInputCommand() && interaction.commandName === 'fichar') {
         const player = interaction.options.getUser('jugador');
         const teamRole = interaction.options.getRole('equipo');
         const rosterCount = interaction.options.getString('plantilla') || 'N/A';
         const manager = interaction.user;
 
-        // Custom ID codificado con la información de la transacción
         const customButtonId = `dm_accept_${teamRole.id}_${manager.id}_${encodeURIComponent(rosterCount)}`;
 
         const acceptButton = new ButtonBuilder()
@@ -101,14 +101,14 @@ client.on('interactionCreate', async interaction => {
         } catch (error) {
             console.error('Error enviando mensaje privado:', error);
             await interaction.reply({
-                content: `❌ No se pudo enviar el DM a <@${player.id}>. Debe habilitar la opción de mensajes directos en los ajustes del servidor.`,
+                content: `❌ No se pudo enviar el DM a <@${player.id}>. Debe habilitar los mensajes directos del servidor.`,
                 ephemeral: true
             });
         }
         return;
     }
 
-    // 2. Manejar la aceptación desde el Mensaje Privado
+    // 2. Clic en "Aceptar Contrato" (Asignación de rol + Publicación)
     if (interaction.isButton() && interaction.customId.startsWith('dm_accept_')) {
         await interaction.deferUpdate();
 
@@ -117,6 +117,21 @@ client.on('interactionCreate', async interaction => {
         const managerId = parts[3];
         const rosterCount = decodeURIComponent(parts[4]);
         const player = interaction.user;
+
+        let roleAssigned = false;
+
+        // Intentar agregar el rol al miembro en el servidor
+        try {
+            const guild = await client.guilds.fetch(GUILD_ID);
+            const member = await guild.members.fetch(player.id);
+            if (guild && member) {
+                await member.roles.add(teamRoleId);
+                roleAssigned = true;
+                console.log(`✅ Rol ${teamRoleId} asignado a ${player.tag}`);
+            }
+        } catch (roleError) {
+            console.error('❌ Error asignando el rol al jugador:', roleError);
+        }
 
         const acceptedEmbed = new EmbedBuilder()
             .setColor('#2ECC71')
@@ -130,22 +145,17 @@ client.on('interactionCreate', async interaction => {
             .setTimestamp()
             .setFooter({ text: 'LaLiga Fichajes • Transactions' });
 
-        // Intento de envío al canal público de anuncios
+        // Enviar anuncio al canal oficial
         try {
-            console.log(`Buscando canal de anuncios con ID: ${CHANNEL_ID}`);
             const channel = await client.channels.fetch(CHANNEL_ID);
-
             if (channel) {
                 await channel.send({ embeds: [acceptedEmbed] });
-                console.log('✅ Fichaje anunciado exitosamente en el canal.');
-            } else {
-                console.error('❌ El canal no fue encontrado por el bot.');
             }
-        } catch (err) {
-            console.error('❌ Error al publicar en el canal oficial:', err);
+        } catch (channelErr) {
+            console.error('❌ Error enviando mensaje al canal público:', channelErr);
         }
 
-        // Desactivar el botón en el privado del jugador
+        // Desactivar botón en el DM
         const disabledButton = new ButtonBuilder()
             .setCustomId('disabled_offer')
             .setLabel('Contrato Firmado')
@@ -154,8 +164,12 @@ client.on('interactionCreate', async interaction => {
 
         const disabledRow = new ActionRowBuilder().addComponents(disabledButton);
 
+        const statusMessage = roleAssigned 
+            ? '✅ **¡Firma completada! Se te ha asignado el rol en el servidor y tu fichaje fue anunciado.**'
+            : '⚠️ **Firma completada y anunciada, pero ocurrió un error con el rol. Verifica la jerarquía de roles de tu bot.**';
+
         await interaction.editReply({
-            content: '✅ **¡Firma completada! Tu fichaje ha sido publicado oficialmente en el servidor.**',
+            content: statusMessage,
             components: [disabledRow]
         });
     }
